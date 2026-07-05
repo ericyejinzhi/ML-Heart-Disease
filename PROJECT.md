@@ -19,12 +19,72 @@ heart-disease-predictor/
 │   ├── processed.switzerland.data
 │   ├── processed.va.data
 │   └── heart-disease.names     # Official attribute documentation
-├── PROJECT.md                  # This file
-└── (notebooks / scripts to be created)
+├── scripts/
+│   ├── parse_data.py           # Raw site files → data/combined.csv
+│   └── clean_data.py           # combined.csv → reduced + train/val/test sets
+├── data/                       # Generated CSVs (see Scripts section)
+├── notebooks/                  # EDA and model exploration
+├── models/                     # Saved model artifacts
+└── PROJECT.md                  # This file
 ```
 
 The `processed.*.data` files already contain only the 14 selected attributes
 (see Feature Reference below).
+
+---
+
+## Scripts
+
+The preprocessing pipeline is split into two scripts. Run them in order from
+the project root (`py scripts/parse_data.py` then `py scripts/clean_data.py`).
+
+### `scripts/parse_data.py` — parse and combine
+
+Reads the four `processed.{cleveland,hungarian,switzerland,va}.data` files,
+assigns the 14 column names, and concatenates them into a single table with a
+leading `source` column identifying the collection site.
+
+- **Missing values** (`?`) are parsed as NA and written as empty fields.
+- **`reprocessed.hungarian.data` is skipped** — it duplicates
+  `processed.hungarian.data` in a different encoding.
+- **`chol == 0` is treated as missing** — a zero cholesterol encodes "not
+  measured" (all of Switzerland, a few VA rows), not a real value.
+- Nullable integer dtypes keep integer columns from being written as floats.
+
+**Output:** `data/combined.csv` — 920 rows × 15 columns (`source` + 14 features).
+
+### `scripts/clean_data.py` — reduce, split, and impute
+
+Turns `combined.csv` into model-ready, leak-free train/test sets.
+
+0. **Drops `source`** — the collection-site label is kept in `combined.csv`
+   for reference but is not used as a model feature.
+1. **Reports missingness** per feature on the full data.
+2. **Drops configured columns** (`DROP_COLUMNS`, default `ca`, `thal`, `slope`
+   — the three sparsest features, ~34–66% missing) and writes
+   `data/combined_reduced.csv`. Missingness is reported again after the cut.
+3. **Splits into train/validation/test first** (60/20/20, stratified on the
+   binarized target) — *before* any imputation, so fill values are never
+   learned from the held-out rows.
+4. **Imputes with statistics fit on the training set only:**
+   - `chol` → **iterative imputation** (`IterativeImputer`), regressed on the
+     other features; the `num` target is excluded to avoid leakage. Results
+     are rounded back to whole mg/dl.
+   - `trestbps`, `thalach`, `oldpeak` → **median** imputation.
+   - `fbs`, `restecg`, `exang` (and `slope`/`thal` if kept) → **mode**
+     imputation.
+5. **One-hot encodes the nominal features** (`cp`, `restecg`) before the
+   iterative imputer runs, so categories are never treated as ordered numbers.
+   Test columns are reindexed to the train columns so both sets align.
+
+**Output:** `data/combined_train.csv` (552 rows), `data/combined_val.csv`
+(184 rows), and `data/combined_test.csv` (184 rows), each 16 columns with zero
+missing values.
+
+**Note on iterative imputation:** predicting the conditional mean shrinks the
+variance of the imputed `chol` values (they cluster near the center), so ~22%
+of that column is low-variance synthetic data. Keep this in mind when reading
+`chol` feature importance.
 
 ---
 
