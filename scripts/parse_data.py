@@ -6,7 +6,7 @@ is skipped: it duplicates processed.hungarian.data in a different
 encoding. Missing values are written as empty fields in the output.
 
 Output: data/combined.csv with a leading `source` column identifying
-the collection site.
+the collection site. Cleaning and feature reduction live in clean_data.py.
 """
 
 from pathlib import Path
@@ -53,8 +53,6 @@ def main() -> None:
     print(f"Wrote {len(combined)} rows to {OUT_PATH}")
     print("\nRows per site:")
     print(combined["source"].value_counts().to_string())
-    print("\nMissing values per column:")
-    print(combined.isna().sum().to_string())
 
 
 if __name__ == "__main__":
