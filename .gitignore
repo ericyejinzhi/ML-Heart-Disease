@@ -1,1 +1,24 @@
+# Raw UCI data (re-extractable from heart+disease.zip)
 heart+disease/
+
+# Generated data and model outputs (reproducible via scripts/)
+data/*.csv
+models/*.csv
+models/*.joblib
+models/*.pkl
+# keep the empty-dir placeholders
+!**/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+Thumbs.db
