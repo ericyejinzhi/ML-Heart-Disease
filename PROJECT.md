@@ -88,6 +88,74 @@ of that column is low-variance synthetic data. Keep this in mind when reading
 
 ---
 
+## Model Exploration (planned)
+
+> Status: designed, not yet implemented. Scripts below are built one at a time.
+
+The modeling stage compares several classifier families on the cleaned splits,
+prioritizing **ROC-AUC** and **recall** (a missed diagnosis is the costly error).
+
+### Target framing
+
+Binarize the target: `y = (num > 0)` — disease present vs. absent. The raw 0–4
+`num` column stays in the CSVs; binarization happens at load time.
+
+### Split usage (60 / 20 / 20)
+
+- **train (552)** — hyperparameter tuning via `GridSearchCV` with
+  `StratifiedKFold` (k=5), scoring `roc_auc`.
+- **val (184)** — model selection: compare each tuned model, pick the best by
+  ROC-AUC (recall as tie-breaker).
+- **test (184)** — touched once at the end, on the selected model refit on
+  train+val. Final reported numbers only.
+
+### Scaling policy (per-model, per-column)
+
+Standardizing the whole matrix would distort the one-hot/binary columns. Instead
+a `ColumnTransformer` scales **only the 5 continuous features** (`age`,
+`trestbps`, `chol`, `thalach`, `oldpeak`) with `StandardScaler` and passes the
+binary/dummy columns through unchanged, so neither group dominates. Scaling is
+applied only for the distance/kernel/linear models (**LogReg, SVM, KNN**); tree
+models and Naive Bayes use the raw features. The scaler lives inside each
+`Pipeline`, so it is refit within every CV fold and never sees held-out rows.
+
+### Planned scripts
+
+**`scripts/dataset.py`** — shared helper: feature-group constants, `load_splits()`,
+`get_xy(df)` (with binarization), and `build_scaler()` (continuous-only
+`ColumnTransformer`). Reused by the training script and the notebook.
+
+**`scripts/train_models.py`** — a `MODELS` registry of the seven families below,
+each with an estimator, hyperparameter grid, and a `needs_scaling` flag. For each:
+build a `Pipeline`, tune with `GridSearchCV` on train, evaluate on val, then select
+the best and report final test metrics. Outputs `models/comparison.csv` (per-model
+val metrics) and `models/best_model.joblib`.
+
+| Model | Scaling | Key hyperparameters |
+|---|---|---|
+| LogisticRegression | yes | `C`, `penalty`/`solver` |
+| SVC (`probability=True`) | yes | `C`, `kernel`, `gamma` |
+| KNeighborsClassifier | yes | `n_neighbors`, `weights`, `metric` |
+| DecisionTreeClassifier | no | `max_depth`, `min_samples_leaf`, `criterion` |
+| RandomForestClassifier | no | `n_estimators`, `max_depth`, `max_features` |
+| GradientBoostingClassifier | no | `n_estimators`, `learning_rate`, `max_depth` |
+| HistGradientBoostingClassifier | no | `learning_rate`, `max_iter`, `max_depth` |
+| GaussianNB | no | `var_smoothing` |
+
+(HistGradientBoosting is the fast sklearn boosting stand-in for XGBoost, which is
+intentionally not a dependency.)
+
+**`notebooks/model_exploration.ipynb`** — matplotlib EDA (class balance, continuous
+distributions by class, correlation heatmap, categorical counts) plus modeling
+results: comparison table, overlaid ROC curves, confusion matrices, metric bar chart.
+
+### Metrics reported per model
+
+ROC-AUC (primary), recall (sensitivity), precision, F1, accuracy, and the confusion
+matrix.
+
+---
+
 ## Features Used (14 attributes)
 
 | # | Name       | Type              | Description |
