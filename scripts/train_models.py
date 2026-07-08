@@ -15,7 +15,7 @@ no model artifact is persisted.
 
 from pathlib import Path
 
-import pandas as pd
+import pandas as pd 
 from sklearn.ensemble import (
     GradientBoostingClassifier,
     HistGradientBoostingClassifier,
