@@ -1,4 +1,4 @@
-# Heart Disease Predictor — Project Plan
+# Heart Disease Predictor - Project Plan
 
 ## Goal
 
@@ -21,10 +21,12 @@ heart-disease-predictor/
 │   └── heart-disease.names     # Official attribute documentation
 ├── scripts/
 │   ├── parse_data.py           # Raw site files → data/combined.csv
-│   └── clean_data.py           # combined.csv → reduced + train/val/test sets
-├── data/                       # Generated CSVs (see Scripts section)
-├── notebooks/                  # EDA and model exploration
-├── models/                     # Saved model artifacts
+│   ├── clean_data.py           # combined.csv → reduced + train/val/test sets
+│   ├── dataset.py              # Shared loaders + continuous-only scaler
+│   └── train_models.py         # Tune/compare 8 model families
+├── data/                       # Generated CSVs (git-ignored)
+├── notebooks/                  # One notebook per model (e.g. knn.ipynb)
+├── models/                     # comparison.csv (git-ignored output)
 └── PROJECT.md                  # This file
 ```
 
@@ -38,33 +40,33 @@ The `processed.*.data` files already contain only the 14 selected attributes
 The preprocessing pipeline is split into two scripts. Run them in order from
 the project root (`py scripts/parse_data.py` then `py scripts/clean_data.py`).
 
-### `scripts/parse_data.py` — parse and combine
+### `scripts/parse_data.py` - parse and combine
 
 Reads the four `processed.{cleveland,hungarian,switzerland,va}.data` files,
 assigns the 14 column names, and concatenates them into a single table with a
 leading `source` column identifying the collection site.
 
 - **Missing values** (`?`) are parsed as NA and written as empty fields.
-- **`reprocessed.hungarian.data` is skipped** — it duplicates
+- **`reprocessed.hungarian.data` is skipped** - it duplicates
   `processed.hungarian.data` in a different encoding.
-- **`chol == 0` is treated as missing** — a zero cholesterol encodes "not
+- **`chol == 0` is treated as missing** - a zero cholesterol encodes "not
   measured" (all of Switzerland, a few VA rows), not a real value.
 - Nullable integer dtypes keep integer columns from being written as floats.
 
-**Output:** `data/combined.csv` — 920 rows × 15 columns (`source` + 14 features).
+**Output:** `data/combined.csv` - 920 rows × 15 columns (`source` + 14 features).
 
-### `scripts/clean_data.py` — reduce, split, and impute
+### `scripts/clean_data.py` - reduce, split, and impute
 
 Turns `combined.csv` into model-ready, leak-free train/test sets.
 
-0. **Drops `source`** — the collection-site label is kept in `combined.csv`
+0. **Drops `source`** - the collection-site label is kept in `combined.csv`
    for reference but is not used as a model feature.
 1. **Reports missingness** per feature on the full data.
 2. **Drops configured columns** (`DROP_COLUMNS`, default `ca`, `thal`, `slope`
-   — the three sparsest features, ~34–66% missing) and writes
+   - the three sparsest features, ~34–66% missing) and writes
    `data/combined_reduced.csv`. Missingness is reported again after the cut.
 3. **Splits into train/validation/test first** (60/20/20, stratified on the
-   binarized target) — *before* any imputation, so fill values are never
+   binarized target) - *before* any imputation, so fill values are never
    learned from the held-out rows.
 4. **Imputes with statistics fit on the training set only:**
    - `chol` → **iterative imputation** (`IterativeImputer`), regressed on the
@@ -88,25 +90,26 @@ of that column is low-variance synthetic data. Keep this in mind when reading
 
 ---
 
-## Model Exploration (planned)
+## Model Exploration
 
-> Status: designed, not yet implemented. Scripts below are built one at a time.
+> Status: scripts implemented and running. Per-model notebooks in progress
+> (KNN done; others follow the same template).
 
 The modeling stage compares several classifier families on the cleaned splits,
 prioritizing **ROC-AUC** and **recall** (a missed diagnosis is the costly error).
 
 ### Target framing
 
-Binarize the target: `y = (num > 0)` — disease present vs. absent. The raw 0–4
+Binarize the target: `y = (num > 0)` - disease present vs. absent. The raw 0–4
 `num` column stays in the CSVs; binarization happens at load time.
 
 ### Split usage (60 / 20 / 20)
 
-- **train (552)** — hyperparameter tuning via `GridSearchCV` with
+- **train (552)** - hyperparameter tuning via `GridSearchCV` with
   `StratifiedKFold` (k=5), scoring `roc_auc`.
-- **val (184)** — model selection: compare each tuned model, pick the best by
+- **val (184)** - model selection: compare each tuned model, pick the best by
   ROC-AUC (recall as tie-breaker).
-- **test (184)** — touched once at the end, on the selected model refit on
+- **test (184)** - touched once at the end, on the selected model refit on
   train+val. Final reported numbers only.
 
 ### Scaling policy (per-model, per-column)
@@ -119,21 +122,22 @@ applied only for the distance/kernel/linear models (**LogReg, SVM, KNN**); tree
 models and Naive Bayes use the raw features. The scaler lives inside each
 `Pipeline`, so it is refit within every CV fold and never sees held-out rows.
 
-### Planned scripts
+### Scripts
 
-**`scripts/dataset.py`** — shared helper: feature-group constants, `load_splits()`,
+**`scripts/dataset.py`** - shared helper: feature-group constants, `load_splits()`,
 `get_xy(df)` (with binarization), and `build_scaler()` (continuous-only
-`ColumnTransformer`). Reused by the training script and the notebook.
+`ColumnTransformer`). Reused by the training script and every notebook.
 
-**`scripts/train_models.py`** — a `MODELS` registry of the seven families below,
+**`scripts/train_models.py`** - a `MODELS` registry of the eight families below,
 each with an estimator, hyperparameter grid, and a `needs_scaling` flag. For each:
 build a `Pipeline`, tune with `GridSearchCV` on train, evaluate on val, then select
-the best and report final test metrics. Outputs `models/comparison.csv` (per-model
-val metrics) and `models/best_model.joblib`.
+the best by val ROC-AUC (recall as tie-breaker), refit on train+val, and evaluate
+once on test. Outputs `models/comparison.csv` (per-model val metrics). No model
+artifact is persisted - the selected model is evaluated in-process.
 
 | Model | Scaling | Key hyperparameters |
 |---|---|---|
-| LogisticRegression | yes | `C`, `penalty`/`solver` |
+| LogisticRegression | yes | `C`, `l1_ratio` (saga) |
 | SVC (`probability=True`) | yes | `C`, `kernel`, `gamma` |
 | KNeighborsClassifier | yes | `n_neighbors`, `weights`, `metric` |
 | DecisionTreeClassifier | no | `max_depth`, `min_samples_leaf`, `criterion` |
@@ -143,11 +147,19 @@ val metrics) and `models/best_model.joblib`.
 | GaussianNB | no | `var_smoothing` |
 
 (HistGradientBoosting is the fast sklearn boosting stand-in for XGBoost, which is
-intentionally not a dependency.)
+intentionally not a dependency. LogReg uses `l1_ratio` rather than the deprecated
+`penalty` argument, per sklearn 1.8.)
 
-**`notebooks/model_exploration.ipynb`** — matplotlib EDA (class balance, continuous
-distributions by class, correlation heatmap, categorical counts) plus modeling
-results: comparison table, overlaid ROC curves, confusion matrices, metric bar chart.
+### Notebooks
+
+**One notebook per model** under `notebooks/` (e.g. `knn.ipynb`), each thin: it
+imports the estimator/grid from `train_models.py`'s `MODELS` registry and the
+loaders from `dataset.py`, so pipeline logic is never duplicated. Each notebook
+tunes on train, evaluates on **validation**, and shows a model-specific diagnostic
+(for KNN, an ROC-AUC-vs-`k` curve). The **test set is not touched** in these
+notebooks - it is reserved for a later cross-model comparison notebook, so the
+hold-out is spent only once. To explore another model, copy a notebook and change
+`MODEL_NAME` to any key in `MODELS`.
 
 ### Metrics reported per model
 
@@ -183,7 +195,7 @@ matrix.
 
 - Primary: `processed.cleveland.data` (~303 rows, no header)
 - Column names must be assigned manually in the listed order above
-- Missing values are encoded as `?` — parse as `na_values="?"`
+- Missing values are encoded as `?` - parse as `na_values="?"`
 
 ### 2. Binarize Target
 
@@ -209,12 +221,12 @@ acceptable. For multi-dataset experiments, imputation is preferred.
 
 | Feature   | Encoding |
 |----------|----------|
-| `cp`      | One-hot encode — nominal, 4 values |
-| `restecg` | One-hot encode — nominal, 3 values |
-| `thal`    | One-hot encode — nominal, non-contiguous values (3/6/7) |
-| `slope`   | Treat as ordinal numeric or one-hot — has natural order |
+| `cp`      | One-hot encode - nominal, 4 values |
+| `restecg` | One-hot encode - nominal, 3 values |
+| `thal`    | One-hot encode - nominal, non-contiguous values (3/6/7) |
+| `slope`   | Treat as ordinal numeric or one-hot - has natural order |
 | `ca`      | Treat as numeric ordinal (0–3 vessel count) |
-| `sex`, `fbs`, `exang` | Already binary — no change needed |
+| `sex`, `fbs`, `exang` | Already binary - no change needed |
 
 ### 5. Feature Scaling
 
@@ -228,7 +240,7 @@ test sets using the training fit to avoid data leakage.
 
 - 80/20 stratified split on the target variable
 - Use **stratified k-fold cross-validation** (k=5 or k=10) for hyperparameter
-  tuning — critical given the small dataset size
+  tuning - critical given the small dataset size
 
 ---
 
@@ -237,11 +249,11 @@ test sets using the training fit to avoid data leakage.
 Before modeling, examine:
 
 - Class balance (target distribution)
-- Correlation heatmap — `oldpeak`, `ca`, `thal`, `cp`, `thalach` typically
+- Correlation heatmap - `oldpeak`, `ca`, `thal`, `cp`, `thalach` typically
   correlate most with the target
-- Distribution plots (continuous features) by class — look for separability in
+- Distribution plots (continuous features) by class - look for separability in
   `thalach` and `oldpeak`
-- Count plots (categorical features) by class — `cp`, `thal`, `ca` often show
+- Count plots (categorical features) by class - `cp`, `thal`, `ca` often show
   strong within-category class imbalance
 
 ---
@@ -289,8 +301,8 @@ Accuracy alone is insufficient for clinical classification.
 
 | Metric | Notes |
 |--------|-------|
-| **ROC-AUC** | Primary metric — threshold-independent |
-| **Recall (Sensitivity)** | Prioritized clinically — false negatives (missed disease) are costly |
+| **ROC-AUC** | Primary metric - threshold-independent |
+| **Recall (Sensitivity)** | Prioritized clinically - false negatives (missed disease) are costly |
 | **Precision** | Track alongside recall |
 | **F1-Score** | Harmonic mean for overall summary |
 | **Confusion Matrix** | Explicit FP/FN counts for each model |
@@ -318,9 +330,9 @@ Accuracy alone is insufficient for clinical classification.
 
 - **Multi-dataset training:** `processed.hungarian.data`, `processed.switzerland.data`,
   and `processed.va.data` use the same 14-feature schema and can be combined.
-  Class distributions differ significantly across sites — consider stratified
+  Class distributions differ significantly across sites - consider stratified
   sampling or site as an additional feature.
 - **Multi-class option:** Keep `num` as 0–4 to model severity. Switch from
   binary cross-entropy to softmax; ROC-AUC becomes macro-averaged.
 - **Feature interactions:** Consider adding `age × thalach` or `oldpeak × slope`
-  as engineered features — both have known clinical interaction effects.
+  as engineered features - both have known clinical interaction effects.

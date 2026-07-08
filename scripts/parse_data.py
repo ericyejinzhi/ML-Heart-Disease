@@ -41,7 +41,7 @@ def main() -> None:
     combined = pd.concat(frames, ignore_index=True)
 
     # A cholesterol of 0 encodes "not measured" (all Switzerland rows,
-    # a few VA rows) — treat it as missing rather than a real value.
+    # a few VA rows) - treat it as missing rather than a real value.
     combined.loc[combined["chol"] == 0, "chol"] = pd.NA
 
     # Nullable integer dtypes keep integer-valued columns from being
