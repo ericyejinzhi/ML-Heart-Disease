@@ -92,11 +92,11 @@ of that column is low-variance synthetic data. Keep this in mind when reading
 
 ## Model Exploration
 
-> Status: scripts implemented and running. All eight per-model notebooks are
-> done; next is the cross-model comparison notebook, which spends the test set
-> once. Current validation leaders: naive_bayes (ROC-AUC 0.859, recall 0.833)
-> and gradient_boosting (0.856, recall 0.873) - recall is the tie-breaker, so
-> the comparison notebook decides.
+> Status: complete through final evaluation. All eight per-model notebooks and
+> the cross-model comparison notebook (`comparison.ipynb`) are done. Selected
+> model: **random_forest** (val ROC-AUC 0.868, recall 0.902 - best on both);
+> refit on train+val, its one-time test metrics are ROC-AUC 0.907, recall
+> 0.863, precision 0.793, accuracy 0.799.
 
 The modeling stage compares several classifier families on the cleaned splits,
 prioritizing **ROC-AUC** and **recall** (a missed diagnosis is the costly error).
@@ -172,10 +172,15 @@ diagnostic:
 | `hist_gradient_boosting.ipynb` | staged ROC-AUC, permutation importance |
 | `naive_bayes.ipynb` | `var_smoothing` sweep, probability calibration |
 
-The **test set is not touched** in these notebooks - it is reserved for the
-cross-model comparison notebook, so the hold-out is spent only once. To explore
-another model, copy a notebook, change `MODEL_NAME` to any key in `MODELS`, and
-swap in a model-appropriate diagnostic.
+The **test set is not touched** in these notebooks - it is reserved for
+`comparison.ipynb`, so the hold-out is spent only once. To explore another
+model, copy a notebook, change `MODEL_NAME` to any key in `MODELS`, and swap in
+a model-appropriate diagnostic.
+
+**`comparison.ipynb`** re-tunes all eight families from the registry, compares
+them on validation (table, bar chart, overlaid ROC curves), selects the best by
+ROC-AUC with recall as tie-breaker, refits the winner on train+val, and reports
+the single, final test evaluation.
 
 ### Metrics reported per model
 
