@@ -92,8 +92,11 @@ of that column is low-variance synthetic data. Keep this in mind when reading
 
 ## Model Exploration
 
-> Status: scripts implemented and running. Per-model notebooks in progress
-> (KNN done; others follow the same template).
+> Status: scripts implemented and running. All eight per-model notebooks are
+> done; next is the cross-model comparison notebook, which spends the test set
+> once. Current validation leaders: naive_bayes (ROC-AUC 0.859, recall 0.833)
+> and gradient_boosting (0.856, recall 0.873) - recall is the tie-breaker, so
+> the comparison notebook decides.
 
 The modeling stage compares several classifier families on the cleaned splits,
 prioritizing **ROC-AUC** and **recall** (a missed diagnosis is the costly error).
@@ -152,14 +155,27 @@ intentionally not a dependency. LogReg uses `l1_ratio` rather than the deprecate
 
 ### Notebooks
 
-**One notebook per model** under `notebooks/` (e.g. `knn.ipynb`), each thin: it
+**One notebook per model** under `notebooks/` (all eight done), each thin: it
 imports the estimator/grid from `train_models.py`'s `MODELS` registry and the
 loaders from `dataset.py`, so pipeline logic is never duplicated. Each notebook
-tunes on train, evaluates on **validation**, and shows a model-specific diagnostic
-(for KNN, an ROC-AUC-vs-`k` curve). The **test set is not touched** in these
-notebooks - it is reserved for a later cross-model comparison notebook, so the
-hold-out is spent only once. To explore another model, copy a notebook and change
-`MODEL_NAME` to any key in `MODELS`.
+tunes on train, evaluates on **validation**, and shows a model-specific
+diagnostic:
+
+| Notebook | Model-specific diagnostics |
+|---|---|
+| `knn.ipynb` | ROC-AUC vs `k` curve |
+| `logreg.ipynb` | hyperparameter surface, coefficients |
+| `svm.ipynb` | support vectors |
+| `decision_tree.ipynb` | depth/leaf-size sensitivity, tree structure |
+| `random_forest.ipynb` | forest size/depth curves, impurity importance |
+| `gradient_boosting.ipynb` | staged ROC-AUC, impurity importance |
+| `hist_gradient_boosting.ipynb` | staged ROC-AUC, permutation importance |
+| `naive_bayes.ipynb` | `var_smoothing` sweep, probability calibration |
+
+The **test set is not touched** in these notebooks - it is reserved for the
+cross-model comparison notebook, so the hold-out is spent only once. To explore
+another model, copy a notebook, change `MODEL_NAME` to any key in `MODELS`, and
+swap in a model-appropriate diagnostic.
 
 ### Metrics reported per model
 
@@ -190,6 +206,10 @@ matrix.
 ---
 
 ## Data Handling Steps
+
+> Original planning notes for a Cleveland-only experiment. The implemented
+> pipeline (see Scripts above) combines all four sites, drops `ca`/`thal`/
+> `slope` instead of imputing them, and splits 60/20/20 rather than 80/20.
 
 ### 1. Load Data
 
@@ -260,6 +280,10 @@ Before modeling, examine:
 
 ## Models to Explore
 
+> Original planning notes. The implemented registry (see the Model Exploration
+> table above) is the source of truth for the final families and grids - it
+> adds `HistGradientBoostingClassifier` as the XGBoost stand-in.
+
 ### Baseline
 **Logistic Regression**
 - Interpretable; strong baseline for tabular clinical data
@@ -278,6 +302,9 @@ Before modeling, examine:
 - Typically the top performer on this dataset
 - Hyperparameters: `n_estimators`, `learning_rate` (`[0.01–0.3]`), `max_depth` (`[3–6]`), `subsample` (`[0.6–1.0]`)
 - XGBoost extras: `colsample_bytree`, `gamma`, `reg_alpha`, `reg_lambda`, `min_child_weight`
+- Implemented as two families: `GradientBoostingClassifier` and
+  `HistGradientBoostingClassifier` (sklearn's fast, histogram-binned XGBoost
+  stand-in - XGBoost itself is intentionally not a dependency)
 
 ### Kernel / Distance-Based
 **SVM (SVC)**
